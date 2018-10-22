@@ -1,20 +1,21 @@
 package validation
 
 import (
+	"errors"
+	"math"
+	"math/big"
+
+	"github.com/MachDary/MachDary/consensus/segwit"
 	"github.com/MachDary/MachDary/protocol/bc"
 	"github.com/MachDary/MachDary/protocol/vm"
-	evm_common "github.com/ethereum/go-ethereum/common"
+
 	evm_state "github.com/ethereum/go-ethereum/core/state"
-	"math/big"
-	"math"
-	"errors"
 	log "github.com/sirupsen/logrus"
-	"github.com/MachDary/MachDary/consensus/segwit"
 )
 
 func EstimateContractGas(e bc.Entry, tx *bc.Tx, block *bc.Block, chain vm.ChainContext, stateDB *evm_state.StateDB) (gasStatus *GasState, err error) {
 
-	stateDB.Prepare(tx.ID.Byte32(), evm_common.Hash{}, 0)
+	stateDB.Prepare(tx.ID.Byte32(), [32]byte{}, 0)
 
 	gasStatus = &GasState{GasValid: true, GasLeft: math.MaxInt64}
 
@@ -63,6 +64,16 @@ func EstimateContractGas(e bc.Entry, tx *bc.Tx, block *bc.Block, chain vm.ChainC
 			args = append(args, new(big.Int).SetUint64(e.Nonce).Bytes())
 			args = append(args, e.To)
 			_, gasLeft, err = vm.Verify(NewTxVMContext(vs, e, e.Input, args), vs.gasStatus.GasLeft)
+		}
+	case *bc.Deposit:
+		if vm.IsOpDeposit(e.ControlProgram.Code) {
+			var args [][]byte
+			_, gasLeft, err = vm.Verify(NewTxVMContext(vs, e, e.ControlProgram, args), vs.gasStatus.GasLeft)
+		}
+	case *bc.Withdrawal:
+		if vm.IsOpWithdraw(e.WithdrawProgram.Code) {
+			var args [][]byte
+			_, gasLeft, err = vm.Verify(NewTxVMContext(vs, e, e.WithdrawProgram, args), vs.gasStatus.GasLeft)
 		}
 	default:
 		return nil, errors.New("unknown program")

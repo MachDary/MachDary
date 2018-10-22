@@ -1,7 +1,7 @@
 package vm
 
 import (
-	evm_state "github.com/ethereum/go-ethereum/core/state"
+	"github.com/MachDary/MachDary/protocol/vm/evm"
 )
 
 // Context contains the execution context for the virtual machine.
@@ -15,7 +15,7 @@ import (
 // ctx (to avoid confusion with context.Context).
 type Context struct {
 	Chain     ChainContext
-	StateDB   *evm_state.StateDB
+	StateDB   evm.StateDB
 	VMVersion uint64
 	Code      []byte
 	Arguments [][]byte

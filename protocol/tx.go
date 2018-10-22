@@ -6,7 +6,6 @@ import (
 	"github.com/MachDary/MachDary/protocol/bc/types"
 	"github.com/MachDary/MachDary/protocol/state"
 	"github.com/MachDary/MachDary/protocol/validation"
-	evm_common "github.com/ethereum/go-ethereum/common"
 )
 
 // ErrBadTx is returned for transactions failing validation
@@ -47,7 +46,7 @@ func (c *Chain) ValidateTx(tx *types.Tx) (acceptable bool, height uint64, gasSta
 		return false, 0, nil, err
 	}
 
-	stateDB.Prepare(tx.ID.Byte32(), evm_common.Hash{}, 0)
+	stateDB.Prepare(tx.ID.Byte32(), [32]byte{}, 0)
 	vs, err := validation.ValidateTx(tx.Tx, block, c, stateDB)
 	gasStatus = vs.GasState()
 	if gasStatus.GasValid == false {

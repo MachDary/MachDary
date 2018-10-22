@@ -3,7 +3,7 @@ package txbuilder
 import (
 	"github.com/MachDary/MachDary/protocol/bc"
 	"github.com/MachDary/MachDary/protocol/vm"
-	"github.com/MachDary/MachDary/protocol/vm/vmutil"
+	"github.com/MachDary/MachDary/protocol/vmutil"
 	"github.com/MachDary/MachDary/basis/crypto/sha3pool"
 )
 

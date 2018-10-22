@@ -3,12 +3,12 @@ package validation
 import (
 	"bytes"
 
-	"github.com/MachDary/MachDary/consensus/segwit"
 	"github.com/MachDary/MachDary/basis/crypto/sha3pool"
 	"github.com/MachDary/MachDary/basis/errors"
+	"github.com/MachDary/MachDary/consensus"
+	"github.com/MachDary/MachDary/consensus/segwit"
 	"github.com/MachDary/MachDary/protocol/bc"
 	"github.com/MachDary/MachDary/protocol/vm"
-	"github.com/MachDary/MachDary/consensus"
 )
 
 // NewTxVMContext generates the vm.Context for BVM
@@ -53,21 +53,40 @@ func NewTxVMContext(vs *ValidationState, entry bc.Entry, prog *bc.Program, args 
 		assetID = &a1
 		a2 := uint64(0)
 		amount = &a2
-		code = &prog.Code
+		c1 := witnessProgram(prog.Code)
+		code = &c1
 
 	case *bc.Call:
 		a1 := consensus.NativeAssetID.Bytes()
 		assetID = &a1
 		a2 := uint64(0)
 		amount = &a2
-		code = &prog.Code
+		c1 := witnessProgram(prog.Code)
+		code = &c1
 
 	case *bc.Contract:
 		a1 := consensus.NativeAssetID.Bytes()
 		assetID = &a1
 		a2 := uint64(0)
 		amount = &a2
-		code = &prog.Code
+		c1 := witnessProgram(prog.Code)
+		code = &c1
+
+	case *bc.Deposit:
+		a1 := e.Source.Value.AssetId.Bytes()
+		assetID = &a1
+		a2 := e.Source.Value.Amount
+		amount = &a2
+		c1 := witnessProgram(prog.Code)
+		code = &c1
+
+	case *bc.Withdrawal:
+		a1 := e.Value.AssetId.Bytes()
+		assetID = &a1
+		amount = &e.Value.Amount
+		destPos = &e.WitnessDestination.Position
+		c1 := witnessProgram(prog.Code)
+		code = &c1
 
 	}
 
@@ -136,10 +155,10 @@ type entryContext struct {
 func (ec *entryContext) checkOutput(index uint64, amount uint64, assetID []byte, vmVersion uint64, code []byte, expansion bool) (bool, error) {
 	checkEntry := func(e bc.Entry) (bool, error) {
 		check := func(prog *bc.Program, value *bc.AssetAmount) bool {
-			return (prog.VmVersion == vmVersion &&
+			return prog.VmVersion == vmVersion &&
 				bytes.Equal(prog.Code, code) &&
 				bytes.Equal(value.AssetId.Bytes(), assetID) &&
-				value.Amount == amount)
+				value.Amount == amount
 		}
 
 		switch e := e.(type) {
@@ -157,6 +176,10 @@ func (ec *entryContext) checkOutput(index uint64, amount uint64, assetID []byte,
 				prog.Code = code
 			}
 			return check(&prog, e.Source.Value), nil
+
+		case *bc.Deposit:
+			return check(e.ControlProgram, e.Source.Value), nil
+
 		}
 
 		return false, vm.ErrContext

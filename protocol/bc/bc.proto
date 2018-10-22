@@ -131,30 +131,46 @@ message ContractDefinition {
 }
 
 message Creation {
-  uint64             nonce                       = 1;
-  ValueDestination   witness_destination         = 2;
-  Program            from                        = 3;
-  Program            input                       = 4;
-  repeated bytes     witness_arguments           = 5;
-  uint64             ordinal                     = 6;
+    uint64 nonce = 1;
+    ValueDestination witness_destination = 2;
+    Program from = 3;
+    Program input = 4;
+    repeated bytes witness_arguments = 5;
+    uint64 ordinal = 6;
 }
 
 message Call {
-  uint64             nonce                       = 1;
-  ValueDestination   witness_destination         = 2;
-  Program            from                        = 3;
-  Program            to                          = 4;
-  Program            input                       = 5;
-  repeated bytes     witness_arguments           = 6;
-  uint64             ordinal                     = 7;
+    uint64 nonce = 1;
+    ValueDestination witness_destination = 2;
+    Program from = 3;
+    Program to = 4;
+    Program input = 5;
+    repeated bytes witness_arguments = 6;
+    uint64 ordinal = 7;
 }
 
 message Contract {
-  uint64             nonce                       = 1;
-  ValueDestination   witness_destination         = 2;
-  Program            from                        = 3;
-  bytes              to                          = 4;
-  Program            input                       = 5;
-  repeated bytes     witness_arguments           = 6;
-  uint64             ordinal                     = 7;
+    uint64 nonce = 1;
+    ValueDestination witness_destination = 2;
+    Program from = 3;
+    bytes to = 4;
+    Program input = 5;
+    repeated bytes witness_arguments = 6;
+    uint64 ordinal = 7;
+}
+
+message Deposit {
+    ValueSource source = 1;
+    Program control_program = 2;
+    uint64 ordinal = 3;
+}
+
+message Withdrawal {
+    Program control_program = 1;
+    AssetAmount value = 2;
+    Program withdraw_program = 3;
+    ValueDestination witness_destination = 4;
+    repeated bytes witness_arguments = 5;
+    uint64 ordinal = 6;
+
 }

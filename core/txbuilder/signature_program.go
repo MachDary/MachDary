@@ -2,7 +2,7 @@ package txbuilder
 
 import (
 	"github.com/MachDary/MachDary/protocol/vm"
-	"github.com/MachDary/MachDary/protocol/vm/vmutil"
+	"github.com/MachDary/MachDary/protocol/vmutil"
 )
 
 // Signature programs constrain how the signed inputs of a transaction

@@ -2,20 +2,21 @@ package api
 
 import (
 	"context"
-	evm_common "github.com/ethereum/go-ethereum/common"
-	evm_types "github.com/ethereum/go-ethereum/core/types"
-	evm_state "github.com/ethereum/go-ethereum/core/state"
+	"encoding/hex"
+	"math"
 	"math/big"
+	"strings"
+
+	chainjson "github.com/MachDary/MachDary/basis/encoding/json"
+	"github.com/MachDary/MachDary/basis/errors"
+	"github.com/MachDary/MachDary/consensus"
+	"github.com/MachDary/MachDary/protocol"
+	"github.com/MachDary/MachDary/protocol/vm"
 	"github.com/MachDary/MachDary/protocol/vm/evm"
 	"github.com/MachDary/MachDary/protocol/vm/state"
-	"github.com/MachDary/MachDary/consensus"
-	"github.com/MachDary/MachDary/protocol/vm"
-	"github.com/MachDary/MachDary/protocol"
-	"math"
-	chainjson "github.com/MachDary/MachDary/basis/encoding/json"
-	"strings"
-	"github.com/MachDary/MachDary/basis/errors"
-	"encoding/hex"
+
+	evm_common "github.com/ethereum/go-ethereum/common"
+	evm_types "github.com/ethereum/go-ethereum/core/types"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -73,7 +74,7 @@ func doCall(
 		msg      evm_types.Message
 		author   *evm_common.Address
 		header   = chain.BestBlockHeader()
-		stateDB  *evm_state.StateDB
+		stateDB  evm.StateDB
 		vmConfig = evm.Config{}
 	)
 
@@ -94,7 +95,7 @@ func doCall(
 
 	log.WithField("data", hex.EncodeToString(data)).WithField("from", from.Hex()).WithField("to", to.Hex()).Println()
 	msg = evm_types.NewMessage(from, to, nonce, amount, gasLimit, gasPrice, data, false)
-	evmContext := vm.NewEVMContext(msg, header, chain, author)
+	evmContext := vm.NewEVMContext(msg, header.Height, header.Timestamp, header.Bits, chain, author)
 	evmEnv := evm.NewEVM(evmContext, stateDB, vmConfig)
 	gp := new(state.GasPool).AddGas(math.MaxUint64)
 

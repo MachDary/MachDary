@@ -2,7 +2,7 @@ package account
 
 import (
 	"encoding/json"
-	"github.com/MachDary/MachDary/protocol/vm/vmutil"
+	"github.com/MachDary/MachDary/protocol/vmutil"
 	log "github.com/sirupsen/logrus"
 )
 

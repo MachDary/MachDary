@@ -19,7 +19,7 @@ import (
 	"github.com/MachDary/MachDary/basis/errors"
 	"github.com/MachDary/MachDary/protocol"
 	"github.com/MachDary/MachDary/protocol/bc"
-	"github.com/MachDary/MachDary/protocol/vm/vmutil"
+	"github.com/MachDary/MachDary/protocol/vmutil"
 )
 
 // DefaultNativeAsset nativeAsset

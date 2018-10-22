@@ -1,21 +1,22 @@
 package validation
 
 import (
+	"bytes"
 	"fmt"
 	"math"
+	"math/big"
 
-	"github.com/MachDary/MachDary/consensus"
-	"github.com/MachDary/MachDary/consensus/segwit"
 	"github.com/MachDary/MachDary/basis/errors"
 	"github.com/MachDary/MachDary/basis/math/checked"
+	"github.com/MachDary/MachDary/config"
+	"github.com/MachDary/MachDary/consensus"
+	"github.com/MachDary/MachDary/consensus/segwit"
 	"github.com/MachDary/MachDary/protocol/bc"
 	"github.com/MachDary/MachDary/protocol/vm"
-	evm_state "github.com/ethereum/go-ethereum/core/state"
+	"github.com/MachDary/MachDary/protocol/vm/evm"
+
 	evm_common "github.com/ethereum/go-ethereum/common"
 	log "github.com/sirupsen/logrus"
-	"math/big"
-	"github.com/MachDary/MachDary/config"
-	"bytes"
 )
 
 // validate transaction error
@@ -108,7 +109,7 @@ func (g *GasState) updateUsage(gasLeft int64) error {
 // the transaction graph when validating entries.
 type ValidationState struct {
 	chain     vm.ChainContext
-	stateDB   *evm_state.StateDB
+	stateDB   evm.StateDB
 	block     *bc.Block
 	tx        *bc.Tx
 	gasStatus *GasState
@@ -265,7 +266,7 @@ func checkValid(vs *ValidationState, e bc.Entry) (err error) {
 		if err != nil {
 			return errors.Wrap(err, "checking issuance program")
 		}
-		log.WithField("gasUsed", vs.gasStatus.GasLeft - gasLeft).Println("Issue")
+		log.WithField("gasUsed", vs.gasStatus.GasLeft-gasLeft).Println("Issue")
 		if err = vs.gasStatus.updateUsage(gasLeft); err != nil {
 			return err
 		}
@@ -277,18 +278,17 @@ func checkValid(vs *ValidationState, e bc.Entry) (err error) {
 		}
 
 	case *bc.Creation:
-		witnessProgram := &bc.Program{VmVersion: e.From.VmVersion, Code: witnessProgram(e.From.Code)}
-		_, gasLeft, err := vm.Verify(NewTxVMContext(vs, e, witnessProgram, e.WitnessArguments), vs.gasStatus.GasLeft)
+		_, gasLeft, err := vm.Verify(NewTxVMContext(vs, e, e.From, e.WitnessArguments), vs.gasStatus.GasLeft)
 		if err != nil {
-			return errors.Wrap(err, "checking creation program")
+			return errors.Wrap(err, "checking creation control program")
 		}
-		log.WithField("gasUsed", vs.gasStatus.GasLeft - gasLeft).Println("checking program")
+		log.WithField("gasUsed", vs.gasStatus.GasLeft-gasLeft).Println("Creation")
 		if err = vs.gasStatus.updateUsage(gasLeft); err != nil {
 			return err
 		}
 
 		if vm.IsOpCreate(e.Input.Code) {
-			log.WithField("gasLeft", vs.gasStatus.GasLeft).Infoln("checking create contract")
+			log.WithField("gasLeft", vs.gasStatus.GasLeft).Infoln("Creation")
 			var args [][]byte
 			from, err := segwit.GetHashFromStandardProg(e.From.Code)
 			if err != nil {
@@ -298,27 +298,26 @@ func checkValid(vs *ValidationState, e bc.Entry) (err error) {
 			args = append(args, new(big.Int).SetUint64(e.Nonce).Bytes())
 			_, gasLeft, err := vm.Verify(NewTxVMContext(vs, e, e.Input, args), vs.gasStatus.GasLeft)
 			if err != nil {
-				return errors.Wrap(err, "checking create contract")
+				return errors.Wrap(err, "checking creation program")
 			}
-			log.WithField("gasUsed", vs.gasStatus.GasLeft - gasLeft).Println("checking create contract")
+			log.WithField("gasUsed", vs.gasStatus.GasLeft-gasLeft).Println("Creation")
 			if err = vs.gasStatus.updateUsage(gasLeft); err != nil {
 				return err
 			}
 		}
 
 	case *bc.Call:
-		witnessProgram := &bc.Program{VmVersion: e.From.VmVersion, Code: witnessProgram(e.From.Code)}
-		_, gasLeft, err := vm.Verify(NewTxVMContext(vs, e, witnessProgram, e.WitnessArguments), vs.gasStatus.GasLeft)
+		_, gasLeft, err := vm.Verify(NewTxVMContext(vs, e, e.From, e.WitnessArguments), vs.gasStatus.GasLeft)
 		if err != nil {
-			return errors.Wrap(err, "checking call program")
+			return errors.Wrap(err, "checking call control program")
 		}
-		log.WithField("gasUsed", vs.gasStatus.GasLeft - gasLeft).Println("checking program")
+		log.WithField("gasUsed", vs.gasStatus.GasLeft-gasLeft).Println("Call")
 		if err = vs.gasStatus.updateUsage(gasLeft); err != nil {
 			return err
 		}
 
 		if vm.IsOpCall(e.Input.Code) {
-			log.WithField("gasLeft", vs.gasStatus.GasLeft).Infoln("checking call contract")
+			log.WithField("gasLeft", vs.gasStatus.GasLeft).Infoln("Call")
 			var args [][]byte
 			from, err := segwit.GetHashFromStandardProg(e.From.Code)
 			if err != nil {
@@ -329,27 +328,26 @@ func checkValid(vs *ValidationState, e bc.Entry) (err error) {
 			args = append(args, e.To.Code)
 			_, gasLeft, err := vm.Verify(NewTxVMContext(vs, e, e.Input, args), vs.gasStatus.GasLeft)
 			if err != nil {
-				return errors.Wrap(err, "checking call contract")
+				return errors.Wrap(err, "checking call program")
 			}
-			log.WithField("gasUsed", vs.gasStatus.GasLeft - gasLeft).Println("checking call contract")
+			log.WithField("gasUsed", vs.gasStatus.GasLeft-gasLeft).Println("Call")
 			if err = vs.gasStatus.updateUsage(gasLeft); err != nil {
 				return err
 			}
 		}
 
 	case *bc.Contract:
-		witnessProgram := &bc.Program{VmVersion: e.From.VmVersion, Code: witnessProgram(e.From.Code)}
-		_, gasLeft, err := vm.Verify(NewTxVMContext(vs, e, witnessProgram, e.WitnessArguments), vs.gasStatus.GasLeft)
+		_, gasLeft, err := vm.Verify(NewTxVMContext(vs, e, e.From, e.WitnessArguments), vs.gasStatus.GasLeft)
 		if err != nil {
-			return errors.Wrap(err, "checking program")
+			return errors.Wrap(err, "checking contract control program")
 		}
-		log.WithField("gasUsed", vs.gasStatus.GasLeft - gasLeft).Println("checking program")
+		log.WithField("gasUsed", vs.gasStatus.GasLeft-gasLeft).Println("Contract")
 		if err = vs.gasStatus.updateUsage(gasLeft); err != nil {
 			return err
 		}
 
 		if vm.IsOpContract(e.Input.Code) {
-			log.WithField("gasLeft", vs.gasStatus.GasLeft).Infoln("checking contract")
+			log.WithField("gasLeft", vs.gasStatus.GasLeft).Infoln("Contract")
 			var args [][]byte
 			from, err := segwit.GetHashFromStandardProg(e.From.Code)
 			if err != nil {
@@ -360,9 +358,58 @@ func checkValid(vs *ValidationState, e bc.Entry) (err error) {
 			args = append(args, e.To)
 			_, gasLeft, err := vm.Verify(NewTxVMContext(vs, e, e.Input, args), vs.gasStatus.GasLeft)
 			if err != nil {
-				return errors.Wrap(err, "checking contract")
+				return errors.Wrap(err, "checking contract program")
 			}
-			log.WithField("gasUsed", vs.gasStatus.GasLeft - gasLeft).Println("checking contract")
+			log.WithField("gasUsed", vs.gasStatus.GasLeft-gasLeft).Println("Contract")
+			if err = vs.gasStatus.updateUsage(gasLeft); err != nil {
+				return err
+			}
+		}
+
+	case *bc.Deposit:
+		vs2 := *vs
+		vs2.sourcePos = 0
+		if err = checkValidSrc(&vs2, e.Source); err != nil {
+			return errors.Wrap(err, "checking deposit source")
+		}
+
+		if vm.IsOpDeposit(e.ControlProgram.Code) {
+			log.WithField("gasLeft", vs.gasStatus.GasLeft).Infoln("Deposit")
+			var args [][]byte
+			_, gasLeft, err := vm.Verify(NewTxVMContext(vs, e, e.ControlProgram, args), vs.gasStatus.GasLeft)
+			if err != nil {
+				return errors.Wrap(err, "checking deposit program")
+			}
+			log.WithField("gasUsed", vs.gasStatus.GasLeft-gasLeft).Println("Deposit")
+			if err = vs.gasStatus.updateUsage(gasLeft); err != nil {
+				return err
+			}
+		}
+
+	case *bc.Withdrawal:
+		_, gasLeft, err := vm.Verify(NewTxVMContext(vs, e, e.ControlProgram, e.WitnessArguments), vs.gasStatus.GasLeft)
+		if err != nil {
+			return errors.Wrap(err, "checking withdrawal control program")
+		}
+		log.WithField("gasUsed", vs.gasStatus.GasLeft-gasLeft).Println("Withdrawal")
+		if err = vs.gasStatus.updateUsage(gasLeft); err != nil {
+			return err
+		}
+
+		vs2 := *vs
+		vs2.destPos = 0
+		if err = checkValidDest(&vs2, e.WitnessDestination); err != nil {
+			return errors.Wrap(err, "checking withdrawal destination")
+		}
+
+		if vm.IsOpWithdraw(e.WithdrawProgram.Code) {
+			log.WithField("gasLeft", vs.gasStatus.GasLeft).Infoln("Withdrawal")
+			var args [][]byte
+			_, gasLeft, err := vm.Verify(NewTxVMContext(vs, e, e.WithdrawProgram, args), vs.gasStatus.GasLeft)
+			if err != nil {
+				return errors.Wrap(err, "checking withdrawal program")
+			}
+			log.WithField("gasUsed", vs.gasStatus.GasLeft-gasLeft).Println("Withdrawal")
 			if err = vs.gasStatus.updateUsage(gasLeft); err != nil {
 				return err
 			}
@@ -381,7 +428,7 @@ func checkValid(vs *ValidationState, e bc.Entry) (err error) {
 		if err != nil {
 			return errors.Wrap(err, "checking control program")
 		}
-		log.WithField("gasUsed", vs.gasStatus.GasLeft - gasLeft).Println("Spend")
+		log.WithField("gasUsed", vs.gasStatus.GasLeft-gasLeft).Println("Spend")
 		if err = vs.gasStatus.updateUsage(gasLeft); err != nil {
 			return err
 		}
@@ -493,19 +540,25 @@ func checkValidSrc(vstate *ValidationState, vs *bc.ValueSource) error {
 
 	case *bc.Creation:
 		if vs.Position != 0 {
-			return errors.Wrapf(ErrPosition, "invalid position %d for spend source", vs.Position)
+			return errors.Wrapf(ErrPosition, "invalid position %d for creation source", vs.Position)
 		}
 		dest = ref.WitnessDestination
 
 	case *bc.Call:
 		if vs.Position != 0 {
-			return errors.Wrapf(ErrPosition, "invalid position %d for spend source", vs.Position)
+			return errors.Wrapf(ErrPosition, "invalid position %d for call source", vs.Position)
 		}
 		dest = ref.WitnessDestination
 
 	case *bc.Contract:
 		if vs.Position != 0 {
-			return errors.Wrapf(ErrPosition, "invalid position %d for spend source", vs.Position)
+			return errors.Wrapf(ErrPosition, "invalid position %d for contract source", vs.Position)
+		}
+		dest = ref.WitnessDestination
+
+	case *bc.Withdrawal:
+		if vs.Position != 0 {
+			return errors.Wrapf(ErrPosition, "invalid position %d for withdrawal source", vs.Position)
 		}
 		dest = ref.WitnessDestination
 
@@ -568,6 +621,12 @@ func checkValidDest(vs *ValidationState, vd *bc.ValueDestination) error {
 		}
 		src = ref.Source
 
+	case *bc.Deposit:
+		if vd.Position != 0 {
+			return errors.Wrapf(ErrPosition, "invalid position %d for deposit destination", vd.Position)
+		}
+		src = ref.Source
+
 	case *bc.Mux:
 		if vd.Position >= uint64(len(ref.Sources)) {
 			return errors.Wrapf(ErrPosition, "invalid position %d for %d-source mux destination", vd.Position, len(ref.Sources))
@@ -599,16 +658,28 @@ func checkValidDest(vs *ValidationState, vd *bc.ValueDestination) error {
 
 func checkStandardTx(tx *bc.Tx) error {
 	for _, id := range tx.GasInputIDs {
-		spend, err := tx.Spend(id)
-		if err != nil {
-			return err
-		}
-		spentOutput, err := tx.Output(*spend.SpentOutputId)
-		if err != nil {
-			return err
+		e, ok := tx.Entries[id]
+		if !ok {
+			return errors.Wrapf(bc.ErrMissingEntry, "id %x", id.Bytes())
 		}
 
-		if !segwit.IsP2WScript(spentOutput.ControlProgram.Code) {
+		switch e := e.(type) {
+		case *bc.Spend:
+			spend := e
+			spentOutput, err := tx.Output(*spend.SpentOutputId)
+			if err != nil {
+				return err
+			}
+
+			if !segwit.IsP2WScript(spentOutput.ControlProgram.Code) {
+				return ErrNotStandardTx
+			}
+		case *bc.Withdrawal:
+			withdrawal := e
+			if !segwit.IsP2WScript(withdrawal.ControlProgram.Code) {
+				return ErrNotStandardTx
+			}
+		default:
 			return ErrNotStandardTx
 		}
 	}
@@ -643,7 +714,7 @@ func checkTimeRange(tx *bc.Tx, block *bc.Block) error {
 }
 
 // ValidateTx validates a transaction.
-func ValidateTx(tx *bc.Tx, block *bc.Block, chain vm.ChainContext, stateDB *evm_state.StateDB) (*ValidationState, error) {
+func ValidateTx(tx *bc.Tx, block *bc.Block, chain vm.ChainContext, stateDB evm.StateDB) (*ValidationState, error) {
 	gasStatus := &GasState{GasValid: false}
 
 	vs := &ValidationState{

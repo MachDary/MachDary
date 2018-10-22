@@ -216,6 +216,8 @@ const (
 	OP_CREATE   Op = 0xe1
 	OP_CALL     Op = 0xe2
 	OP_CONTRACT Op = 0xe3
+	OP_DEPOSIT  Op = 0xe4
+	OP_WITHDRAW Op = 0xe5
 )
 
 type opInfo struct {
@@ -328,6 +330,8 @@ var (
 		OP_CREATE:   {OP_CREATE, "CREATE", opCreate},
 		OP_CALL:     {OP_CALL, "CALL", opCall},
 		OP_CONTRACT: {OP_CONTRACT, "CONTRACT", opContract},
+		OP_DEPOSIT:  {OP_DEPOSIT, "DEPOSIT", opDeposit},
+		OP_WITHDRAW: {OP_WITHDRAW, "WITHDRAW", opWithdraw},
 	}
 
 	opsByName map[string]opInfo
@@ -362,7 +366,7 @@ func ParseOp(prog []byte, pc uint32) (inst Instruction, err error) {
 			err = ErrShortProgram
 			return
 		}
-		inst.Data = prog[pc+1: end]
+		inst.Data = prog[pc+1 : end]
 		return
 	}
 	if opcode == OP_PUSHDATA1 {
@@ -380,7 +384,7 @@ func ParseOp(prog []byte, pc uint32) (inst Instruction, err error) {
 			err = ErrShortProgram
 			return
 		}
-		inst.Data = prog[pc+2: end]
+		inst.Data = prog[pc+2 : end]
 		return
 	}
 	if opcode == OP_PUSHDATA2 {
@@ -388,7 +392,7 @@ func ParseOp(prog []byte, pc uint32) (inst Instruction, err error) {
 			err = ErrShortProgram
 			return
 		}
-		n := binary.LittleEndian.Uint16(prog[pc+1: pc+3])
+		n := binary.LittleEndian.Uint16(prog[pc+1 : pc+3])
 		inst.Len += uint32(n) + 2
 		end, ok := checked.AddUint32(pc, inst.Len)
 		if !ok {
@@ -399,7 +403,7 @@ func ParseOp(prog []byte, pc uint32) (inst Instruction, err error) {
 			err = ErrShortProgram
 			return
 		}
-		inst.Data = prog[pc+3: end]
+		inst.Data = prog[pc+3 : end]
 		return
 	}
 	if opcode == OP_PUSHDATA4 {
@@ -409,7 +413,7 @@ func ParseOp(prog []byte, pc uint32) (inst Instruction, err error) {
 		}
 		inst.Len += 4
 
-		n := binary.LittleEndian.Uint32(prog[pc+1: pc+5])
+		n := binary.LittleEndian.Uint32(prog[pc+1 : pc+5])
 		var ok bool
 		inst.Len, ok = checked.AddUint32(inst.Len, n)
 		if !ok {
@@ -425,7 +429,7 @@ func ParseOp(prog []byte, pc uint32) (inst Instruction, err error) {
 			err = ErrShortProgram
 			return
 		}
-		inst.Data = prog[pc+5: end]
+		inst.Data = prog[pc+5 : end]
 		return
 	}
 	if opcode == OP_JUMP || opcode == OP_JUMPIF {
@@ -439,7 +443,7 @@ func ParseOp(prog []byte, pc uint32) (inst Instruction, err error) {
 			err = ErrShortProgram
 			return
 		}
-		inst.Data = prog[pc+1: end]
+		inst.Data = prog[pc+1 : end]
 		return
 	}
 	return

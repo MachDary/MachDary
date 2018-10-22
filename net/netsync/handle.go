@@ -44,7 +44,6 @@ type Chain interface {
 	ProcessBlock(*types.Block) (bool, error)
 	ValidateTx(*types.Tx) (statusFail bool, height uint64, gasStatus *validation.GasState, err error)
 	ProcessTransaction(tx *types.Tx, statusFail bool, height, fee uint64) (bool, error)
-	Store() (*core.Store)
 }
 
 //SyncManager Sync Manager is responsible for the business layer information synchronization

@@ -110,3 +110,29 @@ func (tx *Tx) Contract(id Hash) (*Contract, error) {
 	}
 	return ct, nil
 }
+
+// Deposit try to get the deposit entry by given hash
+func (tx *Tx) Deposit(id Hash) (*Deposit, error) {
+	e, ok := tx.Entries[id]
+	if !ok || e == nil {
+		return nil, errors.Wrapf(ErrMissingEntry, "id %x", id.Bytes())
+	}
+	o, ok := e.(*Deposit)
+	if !ok {
+		return nil, errors.Wrapf(ErrEntryType, "entry %x has unexpected type %T", id.Bytes(), e)
+	}
+	return o, nil
+}
+
+// Withdrawal try to get the withdrawal entry by given hash
+func (tx *Tx) Withdrawal(id Hash) (*Withdrawal, error) {
+	e, ok := tx.Entries[id]
+	if !ok || e == nil {
+		return nil, errors.Wrapf(ErrMissingEntry, "id %x", id.Bytes())
+	}
+	ct, ok := e.(*Withdrawal)
+	if !ok {
+		return nil, errors.Wrapf(ErrEntryType, "entry %x has unexpected type %T", id.Bytes(), e)
+	}
+	return ct, nil
+}

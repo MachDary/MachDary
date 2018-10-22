@@ -57,6 +57,10 @@ func (tx *Tx) SetInputArguments(n uint32, args [][]byte) {
 		e.WitnessArguments = args
 	case *bc.Call:
 		e.WitnessArguments = args
+	case *bc.Contract:
+		e.WitnessArguments = args
+	case *bc.Withdrawal:
+		e.WitnessArguments = args
 	}
 }
 

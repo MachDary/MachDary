@@ -1,23 +1,24 @@
 package protocol
 
 import (
+	"bytes"
+	"fmt"
+	"math/big"
 	"sync"
 
 	log "github.com/sirupsen/logrus"
 
-	"github.com/MachDary/MachDary/config"
 	"github.com/MachDary/MachDary/basis/errors"
+	"github.com/MachDary/MachDary/config"
+	"github.com/MachDary/MachDary/consensus"
+	"github.com/MachDary/MachDary/consensus/segwit"
 	"github.com/MachDary/MachDary/protocol/bc"
 	"github.com/MachDary/MachDary/protocol/bc/types"
 	"github.com/MachDary/MachDary/protocol/state"
-	evm_state "github.com/ethereum/go-ethereum/core/state"
 	vm_state "github.com/MachDary/MachDary/protocol/vm/state"
+
 	evm_common "github.com/ethereum/go-ethereum/common"
-	"github.com/MachDary/MachDary/consensus"
-	"math/big"
-	"fmt"
-	"bytes"
-	"github.com/MachDary/MachDary/consensus/segwit"
+	evm_state "github.com/ethereum/go-ethereum/core/state"
 )
 
 const maxProcessBlockChSize = 1024
@@ -208,7 +209,7 @@ func (c *Chain) ProcessTransaction(tx *types.Tx, statusFail bool, height, fee ui
 	return c.txPool.ProcessTransaction(tx, statusFail, height, fee)
 }
 
-func (c *Chain) Store() (*Store) {
+func (c *Chain) Store() *Store {
 	return &c.store
 }
 
@@ -218,10 +219,43 @@ func NewState(stateRoot *bc.Hash, c *Chain) (*evm_state.StateDB, error) {
 	return evm_state.New(stateRoot.Byte32(), stateDB)
 }
 
+func (c *Chain) CurrentState() (*evm_state.StateDB, error) {
+	return NewState(&c.BestBlockHeader().StateRoot, c)
+}
+
 func (c *Chain) GetAccountNonce(address []byte) (uint64, error) {
-	stateDB, err := NewState(&c.BestBlockHeader().StateRoot, c)
+	stateDB, err := c.CurrentState()
 	if err != nil {
 		return 0, err
 	}
 	return stateDB.GetNonce(evm_common.BytesToAddress(address)), nil
+}
+
+func (c *Chain) GetAccountBalance(address []byte) (*big.Int, error) {
+	stateDB, err := c.CurrentState()
+	if err != nil {
+		return nil, err
+	}
+	return stateDB.GetBalance(evm_common.BytesToAddress(address)), nil
+}
+
+func (c *Chain) CanTransfer(address []byte, amount *big.Int) (bool, error) {
+	stateDB, err := c.CurrentState()
+	if err != nil {
+		return false, err
+	}
+	return stateDB.GetBalance(evm_common.BytesToAddress(address)).Cmp(amount) >= 0, nil
+}
+
+func (c *Chain) BestBlockInfo() (height, timestamp, difficulty uint64) {
+	c.cond.L.Lock()
+	defer c.cond.L.Unlock()
+	return c.bestNode.Height, c.bestNode.Timestamp, c.bestNode.Bits
+}
+
+func (c *Chain) GetBlockHashByHeight(height uint64) [32]byte {
+	if header, _ := c.GetHeaderByHeight(height); header != nil {
+		return header.Hash().Byte32()
+	}
+	return bc.Hash{}.Byte32()
 }

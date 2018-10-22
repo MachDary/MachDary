@@ -1,9 +1,11 @@
 package types
 
 import (
+	"github.com/MachDary/MachDary/basis/crypto/sha3pool"
 	"github.com/MachDary/MachDary/consensus"
 	"github.com/MachDary/MachDary/protocol/bc"
-	"github.com/MachDary/MachDary/basis/crypto/sha3pool"
+	"github.com/MachDary/MachDary/protocol/vm"
+	"github.com/MachDary/MachDary/protocol/vmutil"
 )
 
 // MapTx converts a types TxData object into its entries-based
@@ -43,6 +45,15 @@ func MapTx(oldTx *TxData) *bc.Tx {
 		case *bc.Contract:
 			ord = e.Ordinal
 
+		case *bc.Deposit:
+			ord = e.Ordinal
+
+		case *bc.Withdrawal:
+			ord = e.Ordinal
+			if *e.Value.AssetId == *consensus.NativeAssetID {
+				tx.GasInputIDs = append(tx.GasInputIDs, id)
+			}
+
 		default:
 			continue
 		}
@@ -68,12 +79,13 @@ func mapTx(tx *TxData) (headerID bc.Hash, hdr *bc.TxHeader, entryMap map[bc.Hash
 	}
 
 	var (
-		spends    []*bc.Spend
-		issuances []*bc.Issuance
-		coinbase  *bc.Coinbase
-		creations []*bc.Creation
-		calls     []*bc.Call
-		contracts []*bc.Contract
+		spends      []*bc.Spend
+		issuances   []*bc.Issuance
+		coinbase    *bc.Coinbase
+		creations   []*bc.Creation
+		calls       []*bc.Call
+		contracts   []*bc.Contract
+		withdrawals []*bc.Withdrawal
 	)
 
 	muxSources := make([]*bc.ValueSource, len(tx.Inputs))
@@ -191,11 +203,29 @@ func mapTx(tx *TxData) (headerID bc.Hash, hdr *bc.TxHeader, entryMap map[bc.Hash
 			}
 			contracts = append(contracts, contract)
 
+		case *WithdrawalInput:
+			controlProgram := &bc.Program{
+				VmVersion: inp.VMVersion,
+				Code:      inp.ControlProgram,
+			}
+			withdrawProgram := &bc.Program{
+				VmVersion: inp.VMVersion,
+				Code:      inp.WithdrawProgram,
+			}
+			value := input.AssetAmount()
+			withdrawal := bc.NewWithdrawal(controlProgram, &value, withdrawProgram, inp.Arguments, uint64(i))
+			withdrawalID := addEntry(withdrawal)
+
+			muxSources[i] = &bc.ValueSource{
+				Ref:   &withdrawalID,
+				Value: &value,
+			}
+			withdrawals = append(withdrawals, withdrawal)
+
 		}
 	}
 
-	//mux := bc.NewMux(muxSources, &bc.Program{VmVersion: 1, Code: []byte{byte(vm.OP_TRUE)}})
-	mux := bc.NewMux(muxSources, &bc.Program{VmVersion: 1, Code: []byte{byte(0x51)}})
+	mux := bc.NewMux(muxSources, &bc.Program{VmVersion: 1, Code: []byte{byte(vm.OP_TRUE)}})
 	muxID := addEntry(mux)
 
 	// connect the inputs to the mux
@@ -219,6 +249,10 @@ func mapTx(tx *TxData) (headerID bc.Hash, hdr *bc.TxHeader, entryMap map[bc.Hash
 		contract.SetDestination(&muxID, mux.Sources[contract.Ordinal].Value, contract.Ordinal)
 	}
 
+	for _, withdrawal := range withdrawals {
+		withdrawal.SetDestination(&muxID, withdrawal.Value, withdrawal.Ordinal)
+	}
+
 	if coinbase != nil {
 		coinbase.SetDestination(&muxID, mux.Sources[0].Value, 0)
 	}
@@ -232,14 +266,18 @@ func mapTx(tx *TxData) (headerID bc.Hash, hdr *bc.TxHeader, entryMap map[bc.Hash
 			Position: uint64(i),
 		}
 		var resultID bc.Hash
-		//if vmutil.IsUnspendable(out.ControlProgram) {
-		if len(out.ControlProgram) > 0 && out.ControlProgram[0] == byte(0x6a) {
+		if vmutil.IsUnspendable(out.ControlProgram) {
 			// retirement
 			r := bc.NewRetirement(src, uint64(i))
 			resultID = addEntry(r)
+		} else if vm.IsOpDeposit(out.ControlProgram) {
+			// deposit
+			prog := &bc.Program{VmVersion: out.VMVersion, Code: out.ControlProgram}
+			o := bc.NewDeposit(src, prog, uint64(i))
+			resultID = addEntry(o)
 		} else {
 			// non-retirement
-			prog := &bc.Program{out.VMVersion, out.ControlProgram}
+			prog := &bc.Program{VmVersion: out.VMVersion, Code: out.ControlProgram}
 			o := bc.NewOutput(src, prog, uint64(i))
 			resultID = addEntry(o)
 		}

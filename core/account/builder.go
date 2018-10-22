@@ -2,20 +2,20 @@ package account
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
+	"math/big"
 
+	"github.com/MachDary/MachDary/basis/crypto/ed25519/chainkd"
+	chainjson "github.com/MachDary/MachDary/basis/encoding/json"
+	"github.com/MachDary/MachDary/basis/errors"
+	"github.com/MachDary/MachDary/config"
 	"github.com/MachDary/MachDary/core/signers"
 	"github.com/MachDary/MachDary/core/txbuilder"
-	"github.com/MachDary/MachDary/basis/crypto/ed25519/chainkd"
-	"github.com/MachDary/MachDary/basis/errors"
 	"github.com/MachDary/MachDary/protocol/bc"
 	"github.com/MachDary/MachDary/protocol/bc/types"
-	"github.com/MachDary/MachDary/protocol/vm/vmutil"
-	chainjson "github.com/MachDary/MachDary/basis/encoding/json"
-	"math/big"
 	"github.com/MachDary/MachDary/protocol/vm"
-	"github.com/MachDary/MachDary/config"
-	"encoding/hex"
+	"github.com/MachDary/MachDary/protocol/vmutil"
 )
 
 //DecodeSpendAction unmarshal JSON-encoded data of spend action
@@ -25,7 +25,7 @@ func (m *Manager) DecodeSpendAction(data []byte) (txbuilder.Action, error) {
 }
 
 type spendAction struct {
-	accounts       *Manager
+	accounts *Manager
 	bc.AssetAmount
 	AccountID      string `json:"account_id"`
 	UseUnconfirmed bool   `json:"use_unconfirmed"`
@@ -33,7 +33,7 @@ type spendAction struct {
 
 // MergeSpendAction merge common assetID and accountID spend action
 func MergeSpendAction(actions []txbuilder.Action) []txbuilder.Action {
-	resultActions := []txbuilder.Action{}
+	var resultActions []txbuilder.Action
 	spendActionMap := make(map[string]*spendAction)
 
 	for _, act := range actions {
@@ -232,12 +232,13 @@ func (m *Manager) DecodeCreateContractAction(data []byte) (txbuilder.Action, err
 }
 
 type createContractAction struct {
-	accounts  *Manager
+	accounts *Manager
 	bc.AssetAmount
 	AccountID string             `json:"account_id"`
 	Contract  chainjson.HexBytes `json:"input"`
 	Creator   string             `json:"from"`
 	Nonce     chainjson.HexBytes `json:"nonce"`
+	VM        int64              `json:"vm"`
 }
 
 func (a *createContractAction) Build(ctx context.Context, b *txbuilder.TemplateBuilder) error {
@@ -296,9 +297,19 @@ func (a *createContractAction) Build(ctx context.Context, b *txbuilder.TemplateB
 
 	if config.SupportBalanceInStateDB && a.Amount > 0 {
 		toAddress := vm.ContractAddress(address, nonce)
-		toProgram, err := vmutil.P2ContractProgram(toAddress)
+		toProgram, err := vmutil.P2ContractProgram(a.VM, toAddress)
 		if err = b.AddOutput(types.NewTxOutput(*a.AssetId, a.Amount, toProgram)); err != nil {
-			return errors.Wrap(err, "adding contract output")
+			return errors.Wrap(err, "adding create output")
+		}
+	}
+
+	if a.Amount > 0 {
+		depositProgram, err := vmutil.DepositProgram(a.VM, address)
+		if err != nil {
+			return err
+		}
+		if err = b.AddOutput(types.NewTxOutput(*a.AssetId, a.Amount, depositProgram)); err != nil {
+			return errors.Wrap(err, "adding deposit output")
 		}
 	}
 
@@ -315,6 +326,9 @@ func getSender(accounts *Manager, accountID, senderAddress string) (sender *Ctrl
 	if err != nil {
 		return nil, err
 	}
+	if accountID != cp.AccountID {
+		return nil, errors.New("accountID mismatch")
+	}
 	return cp, nil
 }
 
@@ -326,13 +340,14 @@ func (m *Manager) DecodeSendToContractAction(data []byte) (txbuilder.Action, err
 }
 
 type sendToContractAction struct {
-	accounts  *Manager
+	accounts *Manager
 	bc.AssetAmount
 	AccountID string             `json:"account_id"`
 	Contract  chainjson.HexBytes `json:"to"`
 	Input     chainjson.HexBytes `json:"input"`
 	Sender    string             `json:"from"`
 	Nonce     chainjson.HexBytes `json:"nonce"`
+	VM        int64              `json:"vm"`
 }
 
 func (a *sendToContractAction) Build(ctx context.Context, b *txbuilder.TemplateBuilder) error {
@@ -394,9 +409,19 @@ func (a *sendToContractAction) Build(ctx context.Context, b *txbuilder.TemplateB
 		if toAddress == nil {
 			toAddress = vm.ContractAddress(address, nonce)
 		}
-		toProgram, err := vmutil.P2ContractProgram(toAddress)
+		toProgram, err := vmutil.P2ContractProgram(a.VM, toAddress)
 		if err = b.AddOutput(types.NewTxOutput(*a.AssetId, a.Amount, toProgram)); err != nil {
-			return errors.Wrap(err, "adding contract output")
+			return errors.Wrap(err, "adding call output")
+		}
+	}
+
+	if a.Amount > 0 {
+		depositProgram, err := vmutil.DepositProgram(a.VM, address)
+		if err != nil {
+			return err
+		}
+		if err = b.AddOutput(types.NewTxOutput(*a.AssetId, a.Amount, depositProgram)); err != nil {
+			return errors.Wrap(err, "adding deposit output")
 		}
 	}
 
@@ -411,13 +436,14 @@ func (m *Manager) DecodeContractAction(data []byte) (txbuilder.Action, error) {
 }
 
 type contractAction struct {
-	accounts  *Manager
+	accounts *Manager
 	bc.AssetAmount
 	AccountID string             `json:"account_id"`
 	From      string             `json:"from"`
 	Nonce     chainjson.HexBytes `json:"nonce"`
 	To        chainjson.HexBytes `json:"to"`
 	Input     chainjson.HexBytes `json:"input"`
+	VM        int64              `json:"vm"`
 }
 
 func (a *contractAction) Build(ctx context.Context, b *txbuilder.TemplateBuilder) (err error) {
@@ -479,9 +505,19 @@ func (a *contractAction) Build(ctx context.Context, b *txbuilder.TemplateBuilder
 		if toAddress == nil {
 			toAddress = vm.ContractAddress(address, nonce)
 		}
-		toProgram, err := vmutil.P2ContractProgram(toAddress)
+		toProgram, err := vmutil.P2ContractProgram(a.VM, toAddress)
 		if err = b.AddOutput(types.NewTxOutput(*a.AssetId, a.Amount, toProgram)); err != nil {
 			return errors.Wrap(err, "adding contract output")
+		}
+	}
+
+	if a.Amount > 0 {
+		depositProgram, err := vmutil.DepositProgram(a.VM, address)
+		if err != nil {
+			return err
+		}
+		if err = b.AddOutput(types.NewTxOutput(*a.AssetId, a.Amount, depositProgram)); err != nil {
+			return errors.Wrap(err, "adding deposit output")
 		}
 	}
 

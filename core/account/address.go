@@ -7,7 +7,7 @@ import (
 	"github.com/MachDary/MachDary/basis/crypto"
 	"github.com/MachDary/MachDary/basis/crypto/ed25519/chainkd"
 	"github.com/MachDary/MachDary/basis/crypto/sha3pool"
-	"github.com/MachDary/MachDary/protocol/vm/vmutil"
+	"github.com/MachDary/MachDary/protocol/vmutil"
 	"encoding/hex"
 )
 

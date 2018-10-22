@@ -39,7 +39,7 @@ func IsOpCreate(prog []byte) bool {
 
 func opCreate(vm *virtualMachine) error {
 	var (
-		chain        = vm.context.Chain
+		chain       = vm.context.Chain
 		assetID     = *vm.context.AssetID
 		assetAmount = *vm.context.Amount
 
@@ -52,9 +52,10 @@ func opCreate(vm *virtualMachine) error {
 
 		msg      evm_types.Message
 		author   *evm_common.Address
-		header   = vm.context.Chain.BestBlockHeader()
 		stateDB  = vm.context.StateDB
 		vmConfig = evm.Config{}
+
+		height, timestamp, difficulty = vm.context.Chain.BestBlockInfo()
 	)
 
 	// get params from dataStack
@@ -97,7 +98,7 @@ func opCreate(vm *virtualMachine) error {
 	msg = evm_types.NewMessage(from, to, nonce, amount, gasLimit, gasPrice, data, true)
 	//fmt.Printf("msg=%v\n", msg)
 	//fmt.Printf("header=%v\n", header)
-	evmContext := NewEVMContext(msg, header, chain, author)
+	evmContext := NewEVMContext(msg, height, timestamp, difficulty, chain, author)
 	//fmt.Printf("evmContext=%v\n", evmContext)
 	evmEnv := evm.NewEVM(evmContext, stateDB, vmConfig)
 	//fmt.Printf("evmEnv=%v\n", evmEnv)

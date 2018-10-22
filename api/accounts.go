@@ -9,7 +9,7 @@ import (
 
 	"github.com/MachDary/MachDary/core/account"
 	"github.com/MachDary/MachDary/basis/crypto/ed25519/chainkd"
-	"github.com/MachDary/MachDary/protocol/vm/vmutil"
+	"github.com/MachDary/MachDary/protocol/vmutil"
 	"github.com/MachDary/MachDary/common"
 )
 

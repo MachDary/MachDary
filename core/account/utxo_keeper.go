@@ -24,6 +24,8 @@ var (
 	ErrReserved     = errors.New("reservation found outputs already reserved")
 	ErrMatchUTXO    = errors.New("can't find utxo with given hash")
 	ErrReservation  = errors.New("couldn't find reservation")
+
+	ErrInsufficientBalance = errors.New("insufficient balance for transfer")
 )
 
 // UTXO describes an individual account utxo.
@@ -95,7 +97,7 @@ func (uk *utxoKeeper) ListUnconfirmed() []*UTXO {
 	uk.mtx.Lock()
 	defer uk.mtx.Unlock()
 
-	utxos := []*UTXO{}
+	var utxos []*UTXO
 	for _, utxo := range uk.unconfirmed {
 		utxos = append(utxos, utxo)
 	}
@@ -202,7 +204,7 @@ func (uk *utxoKeeper) expireReservation(t time.Time) {
 func (uk *utxoKeeper) findUtxos(accountID string, assetID *bc.AssetID, useUnconfirmed bool) ([]*UTXO, uint64) {
 	immatureAmount := uint64(0)
 	currentHeight := uk.currentHeight()
-	utxos := []*UTXO{}
+	var utxos []*UTXO
 	appendUtxo := func(u *UTXO) {
 		if u.AccountID != accountID || u.AssetID != *assetID {
 			return
@@ -295,7 +297,7 @@ func (uk *utxoKeeper) optUTXOs(utxos []*UTXO, amount uint64) ([]*UTXO, uint64, u
 		}
 	}
 
-	optUtxos := []*UTXO{}
+	var optUtxos []*UTXO
 	for e := optList.Front(); e != nil; e = e.Next() {
 		optUtxos = append(optUtxos, e.Value.(*UTXO))
 	}

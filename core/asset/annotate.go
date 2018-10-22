@@ -6,7 +6,7 @@ import (
 	"github.com/MachDary/MachDary/core/query"
 	"github.com/MachDary/MachDary/core/signers"
 	chainjson "github.com/MachDary/MachDary/basis/encoding/json"
-	"github.com/MachDary/MachDary/protocol/vm/vmutil"
+	"github.com/MachDary/MachDary/protocol/vmutil"
 )
 
 func isValidJSON(b []byte) bool {

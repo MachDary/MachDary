@@ -17,12 +17,13 @@ const (
 	CreationInputType
 	CallInputType
 	ContractInputType
+	WithdrawalInputType
 )
 
 type (
 	// TxInput is the top level struct of tx input.
 	TxInput struct {
-		AssetVersion     uint64
+		AssetVersion uint64
 		//ReferenceData    []byte
 		TypedInput
 		CommitmentSuffix []byte
@@ -48,6 +49,8 @@ func (t *TxInput) AssetAmount() bc.AssetAmount {
 		}
 	case *SpendInput:
 		return inp.AssetAmount
+	case *WithdrawalInput:
+		return inp.AssetAmount
 	}
 	return bc.AssetAmount{}
 }
@@ -58,6 +61,8 @@ func (t *TxInput) AssetID() bc.AssetID {
 	case *IssuanceInput:
 		return inp.AssetID()
 	case *SpendInput:
+		return *inp.AssetId
+	case *WithdrawalInput:
 		return *inp.AssetId
 
 	}
@@ -70,6 +75,8 @@ func (t *TxInput) Amount() uint64 {
 	case *IssuanceInput:
 		return inp.Amount
 	case *SpendInput:
+		return inp.Amount
+	case *WithdrawalInput:
 		return inp.Amount
 	}
 	return 0
@@ -84,14 +91,8 @@ func (t *TxInput) ControlProgram() []byte {
 		return inp.ControlProgram
 	case *ContractInput:
 		return inp.ControlProgram
-	}
-	return nil
-}
-
-// IssuanceProgram return the control program of the issuance input
-func (t *TxInput) IssuanceProgram() []byte {
-	if ii, ok := t.TypedInput.(*IssuanceInput); ok {
-		return ii.IssuanceProgram
+	case *WithdrawalInput:
+		return inp.ControlProgram
 	}
 	return nil
 }
@@ -109,6 +110,8 @@ func (t *TxInput) Arguments() [][]byte {
 		return inp.Arguments
 	case *ContractInput:
 		return inp.Arguments
+	case *WithdrawalInput:
+		return inp.Arguments
 	}
 	return nil
 }
@@ -125,6 +128,8 @@ func (t *TxInput) SetArguments(args [][]byte) {
 	case *CallInput:
 		inp.Arguments = args
 	case *ContractInput:
+		inp.Arguments = args
+	case *WithdrawalInput:
 		inp.Arguments = args
 	}
 }
@@ -190,6 +195,12 @@ func (t *TxInput) readFrom(r *blockchain.Reader) (err error) {
 			if ci.Data, err = blockchain.ReadVarstr31(r); err != nil {
 				return err
 			}
+			if ci.VMVersion, err = blockchain.ReadVarint63(r); err != nil {
+				return err
+			}
+			if ci.ControlProgram, err = blockchain.ReadVarstr31(r); err != nil {
+				return err
+			}
 
 		case CallInputType:
 			ci := new(CallInput)
@@ -204,6 +215,12 @@ func (t *TxInput) readFrom(r *blockchain.Reader) (err error) {
 			if ci.Data, err = blockchain.ReadVarstr31(r); err != nil {
 				return err
 			}
+			if ci.VMVersion, err = blockchain.ReadVarint63(r); err != nil {
+				return err
+			}
+			if ci.ControlProgram, err = blockchain.ReadVarstr31(r); err != nil {
+				return err
+			}
 
 		case ContractInputType:
 			ci := new(ContractInput)
@@ -216,6 +233,29 @@ func (t *TxInput) readFrom(r *blockchain.Reader) (err error) {
 				return err
 			}
 			if ci.Data, err = blockchain.ReadVarstr31(r); err != nil {
+				return err
+			}
+			if ci.VMVersion, err = blockchain.ReadVarint63(r); err != nil {
+				return err
+			}
+			if ci.ControlProgram, err = blockchain.ReadVarstr31(r); err != nil {
+				return err
+			}
+
+		case WithdrawalInputType:
+			wi := new(WithdrawalInput)
+			t.TypedInput = wi
+
+			if err = wi.AssetAmount.ReadFrom(r); err != nil {
+				return errors.Wrap(err, "reading asset+amount")
+			}
+			if wi.WithdrawProgram, err = blockchain.ReadVarstr31(r); err != nil {
+				return err
+			}
+			if wi.VMVersion, err = blockchain.ReadVarint63(r); err != nil {
+				return err
+			}
+			if wi.ControlProgram, err = blockchain.ReadVarstr31(r); err != nil {
 				return err
 			}
 
@@ -257,34 +297,21 @@ func (t *TxInput) readFrom(r *blockchain.Reader) (err error) {
 			}
 
 		case *CreationInput:
-			if inp.VMVersion, err = blockchain.ReadVarint63(r); err != nil {
-				return err
-			}
-			if inp.ControlProgram, err = blockchain.ReadVarstr31(r); err != nil {
-				return err
-			}
 			if inp.Arguments, err = blockchain.ReadVarstrList(r); err != nil {
 				return err
 			}
 
 		case *CallInput:
-			if inp.VMVersion, err = blockchain.ReadVarint63(r); err != nil {
-				return err
-			}
-			if inp.ControlProgram, err = blockchain.ReadVarstr31(r); err != nil {
-				return err
-			}
 			if inp.Arguments, err = blockchain.ReadVarstrList(r); err != nil {
 				return err
 			}
 
 		case *ContractInput:
-			if inp.VMVersion, err = blockchain.ReadVarint63(r); err != nil {
+			if inp.Arguments, err = blockchain.ReadVarstrList(r); err != nil {
 				return err
 			}
-			if inp.ControlProgram, err = blockchain.ReadVarstr31(r); err != nil {
-				return err
-			}
+
+		case *WithdrawalInput:
 			if inp.Arguments, err = blockchain.ReadVarstrList(r); err != nil {
 				return err
 			}
@@ -353,6 +380,12 @@ func (t *TxInput) writeInputCommitment(w io.Writer) (err error) {
 		if _, err = blockchain.WriteVarstr31(w, inp.Data); err != nil {
 			return err
 		}
+		if _, err := blockchain.WriteVarint63(w, inp.VMVersion); err != nil {
+			return err
+		}
+		if _, err := blockchain.WriteVarstr31(w, inp.ControlProgram); err != nil {
+			return err
+		}
 		return err
 
 	case *CallInput:
@@ -368,6 +401,12 @@ func (t *TxInput) writeInputCommitment(w io.Writer) (err error) {
 		if _, err = blockchain.WriteVarstr31(w, inp.Data); err != nil {
 			return err
 		}
+		if _, err := blockchain.WriteVarint63(w, inp.VMVersion); err != nil {
+			return err
+		}
+		if _, err := blockchain.WriteVarstr31(w, inp.ControlProgram); err != nil {
+			return err
+		}
 		return err
 
 	case *ContractInput:
@@ -381,6 +420,30 @@ func (t *TxInput) writeInputCommitment(w io.Writer) (err error) {
 			return err
 		}
 		if _, err = blockchain.WriteVarstr31(w, inp.Data); err != nil {
+			return err
+		}
+		if _, err := blockchain.WriteVarint63(w, inp.VMVersion); err != nil {
+			return err
+		}
+		if _, err := blockchain.WriteVarstr31(w, inp.ControlProgram); err != nil {
+			return err
+		}
+		return err
+
+	case *WithdrawalInput:
+		if _, err = w.Write([]byte{WithdrawalInputType}); err != nil {
+			return err
+		}
+		if _, err = inp.AssetAmount.WriteTo(w); err != nil {
+			return errors.Wrap(err, "writing asset amount")
+		}
+		if _, err = blockchain.WriteVarstr31(w, inp.WithdrawProgram); err != nil {
+			return err
+		}
+		if _, err := blockchain.WriteVarint63(w, inp.VMVersion); err != nil {
+			return err
+		}
+		if _, err := blockchain.WriteVarstr31(w, inp.ControlProgram); err != nil {
 			return err
 		}
 		return err
@@ -412,32 +475,18 @@ func (t *TxInput) writeInputWitness(w io.Writer) error {
 		return err
 
 	case *CreationInput:
-		if _, err := blockchain.WriteVarint63(w, inp.VMVersion); err != nil {
-			return err
-		}
-		if _, err := blockchain.WriteVarstr31(w, inp.ControlProgram); err != nil {
-			return err
-		}
 		_, err := blockchain.WriteVarstrList(w, inp.Arguments)
 		return err
 
 	case *CallInput:
-		if _, err := blockchain.WriteVarint63(w, inp.VMVersion); err != nil {
-			return err
-		}
-		if _, err := blockchain.WriteVarstr31(w, inp.ControlProgram); err != nil {
-			return err
-		}
 		_, err := blockchain.WriteVarstrList(w, inp.Arguments)
 		return err
 
 	case *ContractInput:
-		if _, err := blockchain.WriteVarint63(w, inp.VMVersion); err != nil {
-			return err
-		}
-		if _, err := blockchain.WriteVarstr31(w, inp.ControlProgram); err != nil {
-			return err
-		}
+		_, err := blockchain.WriteVarstrList(w, inp.Arguments)
+		return err
+
+	case *WithdrawalInput:
 		_, err := blockchain.WriteVarstrList(w, inp.Arguments)
 		return err
 

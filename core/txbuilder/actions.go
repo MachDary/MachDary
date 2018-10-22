@@ -7,7 +7,7 @@ import (
 	"github.com/MachDary/MachDary/protocol/bc"
 	"github.com/MachDary/MachDary/protocol/bc/types"
 	"github.com/MachDary/MachDary/protocol/vm"
-	"github.com/MachDary/MachDary/protocol/vm/vmutil"
+	"github.com/MachDary/MachDary/protocol/vmutil"
 	"encoding/hex"
 )
 

@@ -22,19 +22,18 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/MachDary/MachDary/protocol/vm/evm"
 	"github.com/ethereum/go-ethereum/core"
-	"github.com/MachDary/MachDary/protocol/bc/types"
 	"github.com/MachDary/MachDary/consensus"
 )
 
 // ChainContext supports retrieving headers and consensus parameters from the
 // current blockchain to be used during transaction processing.
 type ChainContext interface {
-	BestBlockHeader() *types.BlockHeader
-	GetHeaderByHeight(height uint64) (*types.BlockHeader, error)
+	BestBlockInfo() (height, timestamp, difficulty uint64)
+	GetBlockHashByHeight(uint64) ([32]byte)
 }
 
 // NewEVMContext creates a new context for use in the EVM.
-func NewEVMContext(msg core.Message, header *types.BlockHeader, chain ChainContext, author *common.Address) evm.Context {
+func NewEVMContext(msg core.Message, height, timestamp, difficulty uint64, chain ChainContext, author *common.Address) evm.Context {
 	// If we don't have an explicit author (i.e. not mining), extract from the header
 	var beneficiary common.Address = *author
 	return evm.Context{
@@ -43,9 +42,9 @@ func NewEVMContext(msg core.Message, header *types.BlockHeader, chain ChainConte
 		GetHash:     GetHashFn(chain),
 		Origin:      msg.From(),
 		Coinbase:    beneficiary,
-		BlockNumber: new(big.Int).SetUint64(header.Height),
-		Time:        new(big.Int).SetUint64(header.Timestamp),
-		Difficulty:  new(big.Int).SetUint64(header.Bits),
+		BlockNumber: new(big.Int).SetUint64(height),
+		Time:        new(big.Int).SetUint64(timestamp),
+		Difficulty:  new(big.Int).SetUint64(difficulty),
 		GasLimit:    consensus.MaxBlockGas,
 		GasPrice:    new(big.Int).Set(msg.GasPrice()),
 	}
@@ -54,10 +53,7 @@ func NewEVMContext(msg core.Message, header *types.BlockHeader, chain ChainConte
 // GetHashFn returns a GetHashFunc which retrieves header hashes by number
 func GetHashFn(chain ChainContext) func(n uint64) common.Hash {
 	return func(n uint64) common.Hash {
-		if header, _ := chain.GetHeaderByHeight(n); header != nil {
-			return header.Hash().Byte32()
-		}
-		return common.Hash{}
+		return common.Hash(chain.GetBlockHashByHeight(n))
 	}
 }
 

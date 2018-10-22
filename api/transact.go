@@ -9,18 +9,17 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	"github.com/MachDary/MachDary/core/account"
-	"github.com/MachDary/MachDary/core/txbuilder"
-	"github.com/MachDary/MachDary/consensus"
-	"github.com/MachDary/MachDary/consensus/segwit"
 	"github.com/MachDary/MachDary/basis/errors"
 	"github.com/MachDary/MachDary/basis/math/checked"
+	"github.com/MachDary/MachDary/consensus"
+	"github.com/MachDary/MachDary/consensus/segwit"
+	"github.com/MachDary/MachDary/core/account"
+	"github.com/MachDary/MachDary/core/txbuilder"
 	"github.com/MachDary/MachDary/net/http/reqid"
+	"github.com/MachDary/MachDary/protocol"
 	"github.com/MachDary/MachDary/protocol/bc"
 	"github.com/MachDary/MachDary/protocol/bc/types"
 	"github.com/MachDary/MachDary/protocol/validation"
-	"github.com/MachDary/MachDary/protocol"
-	evm_common "github.com/ethereum/go-ethereum/common"
 )
 
 var (
@@ -40,6 +39,8 @@ func (a *API) actionDecoder(action string) (func([]byte) (txbuilder.Action, erro
 		"sendto_contract":                a.wallet.AccountMgr.DecodeSendToContractAction,
 		"contract":                       a.wallet.AccountMgr.DecodeContractAction,
 		"set_transaction_reference_data": txbuilder.DecodeSetTxRefDataAction,
+		"deposit":                        a.wallet.AccountMgr.DecodeDepositAction,
+		"withdraw":                       a.wallet.AccountMgr.DecodeWithdrawAction,
 	}
 	decoder, ok := decoders[action]
 	return decoder, ok
@@ -146,6 +147,7 @@ type submitTxResp struct {
 	GasUsed    int64    `json:"gas_used"`
 	GasValid   bool     `json:"gas_valid"`
 	StorageGas int64    `json:"storage_gas"`
+	VMGas      int64    `json:"vm_gas"`
 }
 
 // POST /submit-transaction
@@ -174,6 +176,7 @@ func (a *API) submit(ctx context.Context, ins struct {
 			GasUsed:    gasStatus.GasUsed,
 			GasValid:   gasStatus.GasValid,
 			StorageGas: gasStatus.StorageGas,
+			VMGas:      gasStatus.GasUsed - gasStatus.StorageGas,
 		}
 	}
 	return resp
@@ -206,7 +209,20 @@ func EstimateTxGas(template txbuilder.Template, chain *protocol.Chain) (*Estimat
 
 	// consume gas for run VM
 	totalP2WSHGas := int64(0)
-	totalContractGas := int64(0)
+	totalVMGas := int64(0)
+
+	tx := template.Transaction.Tx
+
+	bh := chain.BestBlockHeader()
+	block := types.MapBlock(&types.Block{BlockHeader: *bh})
+
+	stateDB, err := protocol.NewState(&bh.StateRoot, chain)
+	if err != nil {
+		err = errors.Wrap(err, "open stateDB")
+		log.Error(err)
+		return nil, err
+	}
+	stateDB.Prepare(tx.ID.Byte32(), [32]byte{}, 0)
 
 	for pos, inpID := range template.Transaction.Tx.InputIDs {
 		e := template.Transaction.Entries[inpID]
@@ -243,33 +259,42 @@ func EstimateTxGas(template txbuilder.Template, chain *protocol.Chain) (*Estimat
 				sigInst := template.SigningInstructions[pos]
 				totalP2WSHGas += estimateP2WSHGas(sigInst)
 			}
+		case *bc.Withdrawal:
+			if segwit.IsP2WSHScript(e.ControlProgram.Code) {
+				sigInst := template.SigningInstructions[pos]
+				totalP2WSHGas += estimateP2WSHGas(sigInst)
+			}
 		default:
 			continue
 		}
-
-		tx := template.Transaction.Tx
-
-		bh := chain.BestBlockHeader()
-		block := types.MapBlock(&types.Block{BlockHeader: *bh})
-
-		stateDB, err := protocol.NewState(&bh.StateRoot, chain)
-		if err != nil {
-			log.Error(errors.Wrap(err, "open stateDB"))
-			continue
-		}
-		stateDB.Prepare(tx.ID.Byte32(), evm_common.Hash{}, 0)
 
 		gasStatus, err := validation.EstimateContractGas(e, template.Transaction.Tx, block, chain, stateDB)
 		if err != nil {
 			log.Infoln(err)
 			continue
 		}
-		totalContractGas += gasStatus.GasUsed
+		totalVMGas += gasStatus.GasUsed
+
+	}
+
+	for _, e := range template.Transaction.Entries {
+		switch e.(type) {
+		case *bc.Deposit:
+		default:
+			continue
+		}
+
+		gasStatus, err := validation.EstimateContractGas(e, template.Transaction.Tx, block, chain, stateDB)
+		if err != nil {
+			log.Infoln(err)
+			continue
+		}
+		totalVMGas += gasStatus.GasUsed
 
 	}
 
 	// total estimate gas
-	totalGas := totalTxSizeGas + totalP2WSHGas + totalContractGas
+	totalGas := totalTxSizeGas + totalP2WSHGas + totalVMGas
 
 	// rounding totalUny with base rate 100000
 	totalUny := float64(totalGas*consensus.VMGasRate) / defaultBaseRate
@@ -278,10 +303,17 @@ func EstimateTxGas(template txbuilder.Template, chain *protocol.Chain) (*Estimat
 
 	// TODO add priority
 
+	log.WithField("baseTxSize", baseTxSize).
+		WithField("signSize", signSize).
+		WithField("totalTxSizeGas", totalTxSizeGas).
+		WithField("totalP2WSHGas", totalP2WSHGas).
+		WithField("VMGas", totalVMGas).
+		WithField("totalVMGas", totalP2WSHGas+totalVMGas).
+		Println("EstimateTxGas")
 	return &EstimateTxGasResp{
 		TotalUny:   estimateUny,
 		StorageUny: totalTxSizeGas * consensus.VMGasRate,
-		VMUny:      (totalP2WSHGas + totalContractGas) * consensus.VMGasRate,
+		VMUny:      (totalP2WSHGas + totalVMGas) * consensus.VMGasRate,
 	}, nil
 }
 
@@ -290,7 +322,7 @@ func EstimateTxGas(template txbuilder.Template, chain *protocol.Chain) (*Estimat
 // where a represent the num of public keys, and b represent the num of quorum.
 func estimateP2WSHGas(sigInst *txbuilder.SigningInstruction) int64 {
 	P2WSHGas := int64(0)
-	baseP2WSHGas := int64(738)
+	baseP2WSHGas := int64(1314)
 
 	for _, witness := range sigInst.WitnessComponents {
 		switch t := witness.(type) {
@@ -307,7 +339,7 @@ func estimateP2WSHGas(sigInst *txbuilder.SigningInstruction) int64 {
 // if need multi-sign, calculate the size according to the length of keys.
 func estimateSignSize(signingInstructions []*txbuilder.SigningInstruction) int64 {
 	signSize := int64(0)
-	baseWitnessSize := int64(300)
+	baseWitnessSize := int64(206)
 
 	for _, sigInst := range signingInstructions {
 		for _, witness := range sigInst.WitnessComponents {

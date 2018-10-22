@@ -7,19 +7,19 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/tendermint/tmlibs/db"
 
+	"github.com/MachDary/MachDary/basis/crypto/sha3pool"
+	chainjson "github.com/MachDary/MachDary/basis/encoding/json"
+	"github.com/MachDary/MachDary/common"
+	"github.com/MachDary/MachDary/consensus"
+	"github.com/MachDary/MachDary/consensus/segwit"
 	"github.com/MachDary/MachDary/core/account"
 	"github.com/MachDary/MachDary/core/asset"
 	"github.com/MachDary/MachDary/core/query"
 	"github.com/MachDary/MachDary/core/signers"
-	"github.com/MachDary/MachDary/common"
-	"github.com/MachDary/MachDary/consensus"
-	"github.com/MachDary/MachDary/consensus/segwit"
-	"github.com/MachDary/MachDary/basis/crypto/sha3pool"
 	"github.com/MachDary/MachDary/protocol/bc"
 	"github.com/MachDary/MachDary/protocol/bc/types"
-	"github.com/MachDary/MachDary/protocol/vm/vmutil"
 	"github.com/MachDary/MachDary/protocol/vm"
-	chainjson "github.com/MachDary/MachDary/basis/encoding/json"
+	"github.com/MachDary/MachDary/protocol/vmutil"
 )
 
 // annotateTxs adds asset data to transactions
@@ -237,7 +237,7 @@ func (w *Wallet) BuildAnnotatedInput(tx *types.Tx, i uint32) *query.AnnotatedInp
 		in.SpentOutputID = e.SpentOutputId
 	case *bc.Issuance:
 		in.Type = "issue"
-		in.IssuanceProgram = orig.IssuanceProgram()
+		in.IssuanceProgram = orig.ControlProgram()
 	case *bc.Coinbase:
 		in.Type = "coinbase"
 		in.Arbitrary = e.Arbitrary
@@ -266,6 +266,10 @@ func (w *Wallet) BuildAnnotatedInput(tx *types.Tx, i uint32) *query.AnnotatedInp
 			in.Contract = vm.ContractAddress(e.From.Code, e.Nonce)
 		}
 		in.Data = e.Input.Code
+	case *bc.Withdrawal:
+		in.Type = "withdrawal"
+		in.ControlProgram = orig.ControlProgram()
+		in.Address = w.getAddressFromControlProgram(in.ControlProgram)
 	}
 	return in
 }
@@ -279,6 +283,14 @@ func (w *Wallet) getAddressFromControlProgram(prog []byte) string {
 		if addr, err := segwit.GetHashFromStandardProg(prog); err == nil {
 			return buildP2ContractAddress(addr)
 		}
+	} else if vm.IsOpDeposit(prog) {
+		if addr, err := vm.GetAddressFromOpDeposit(prog); err == nil {
+			return buildAddress(addr)
+		}
+	} else if vm.IsOpWithdraw(prog) {
+		if addr, err := vm.GetAddressFromOpWithdraw(prog); err == nil {
+			return buildAddress(addr)
+		}
 	}
 
 	return ""
@@ -286,13 +298,16 @@ func (w *Wallet) getAddressFromControlProgram(prog []byte) string {
 
 func buildP2SHAddress(scriptHash []byte) string {
 	address := common.BytesToAddress(scriptHash)
-
 	return address.Hex()
 }
 
 func buildP2ContractAddress(addr []byte) string {
 	address := common.BytesToAddress(addr)
+	return address.Hex()
+}
 
+func buildAddress(addr []byte) string {
+	address := common.BytesToAddress(addr)
 	return address.Hex()
 }
 
@@ -312,6 +327,8 @@ func (w *Wallet) BuildAnnotatedOutput(tx *types.Tx, idx int) *query.AnnotatedOut
 
 	if vmutil.IsUnspendable(out.ControlProgram) {
 		out.Type = "retire"
+	} else if vm.IsOpDeposit(out.ControlProgram) {
+		out.Type = "deposit"
 	} else {
 		out.Type = "control"
 	}

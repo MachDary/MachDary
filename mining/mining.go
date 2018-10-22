@@ -1,25 +1,24 @@
 package mining
 
 import (
+	"math/rand"
 	"sort"
 	"strconv"
 	"time"
 
 	log "github.com/sirupsen/logrus"
 
+	"github.com/MachDary/MachDary/basis/errors"
+	"github.com/MachDary/MachDary/config"
+	"github.com/MachDary/MachDary/consensus"
 	"github.com/MachDary/MachDary/core/account"
 	"github.com/MachDary/MachDary/core/txbuilder"
-	"github.com/MachDary/MachDary/consensus"
-	"github.com/MachDary/MachDary/basis/errors"
 	"github.com/MachDary/MachDary/protocol"
 	"github.com/MachDary/MachDary/protocol/bc"
 	"github.com/MachDary/MachDary/protocol/bc/types"
 	"github.com/MachDary/MachDary/protocol/state"
 	"github.com/MachDary/MachDary/protocol/validation"
-	"github.com/MachDary/MachDary/protocol/vm/vmutil"
-	evm_common "github.com/ethereum/go-ethereum/common"
-	"github.com/MachDary/MachDary/config"
-	"math/rand"
+	"github.com/MachDary/MachDary/protocol/vmutil"
 )
 
 // createCoinbaseTx returns a coinbase transaction paying an appropriate subsidy
@@ -124,7 +123,7 @@ func NewBlockTemplate(c *protocol.Chain, txPool *protocol.TxPool, accountManager
 		}
 
 		revision := stateDB.Snapshot()
-		stateDB.Prepare(tx.ID.Byte32(), evm_common.Hash{}, len(b.Transactions))
+		stateDB.Prepare(tx.ID.Byte32(), [32]byte{}, len(b.Transactions))
 		vs, err := validation.ValidateTx(tx, bcBlock, c, stateDB)
 		gasStatus := vs.GasState()
 		if err != nil {

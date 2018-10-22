@@ -5,7 +5,7 @@ import (
 
 	"github.com/MachDary/MachDary/consensus"
 	"github.com/MachDary/MachDary/protocol/vm"
-	"github.com/MachDary/MachDary/protocol/vm/vmutil"
+	"github.com/MachDary/MachDary/protocol/vmutil"
 )
 
 func IsP2WScript(prog []byte) bool {
@@ -74,7 +74,7 @@ func IsP2ContractProgram(prog []byte) bool {
 	}
 
 	switch vmType.Op {
-	case vmutil.VM_EVM:
+	case vm.VM_EVM:
 	default:
 		return false
 	}

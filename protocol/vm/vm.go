@@ -167,14 +167,23 @@ func (vm *virtualMachine) pop(deferred bool) ([]byte, error) {
 		return nil, ErrDataStackUnderflow
 	}
 	res := vm.dataStack[len(vm.dataStack)-1]
-	vm.dataStack = vm.dataStack[:len(vm.dataStack)-1]
 
 	cost := 8 + int64(len(res))
+	//if deferred {
+	//	vm.deferCost(-cost)
+	//} else {
+	//	vm.runLimit += cost
+	//}
 	if deferred {
-		vm.deferCost(-cost)
+		vm.deferCost(cost)
 	} else {
-		vm.runLimit += cost
+		err := vm.applyCost(cost)
+		if err != nil {
+			return res, err
+		}
 	}
+
+	vm.dataStack = vm.dataStack[:len(vm.dataStack)-1]
 
 	return res, nil
 }
